@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>五子棋</title>
+    <link rel="preload" as="image" href="assets/bamboo-grove-source.png" />
+    <link rel="preload" as="image" href="assets/bamboo-curtain-unroll.webp?v=2" type="image/webp" />
+    <link rel="stylesheet" href="style.css" />
+  </head>
+
+  <body>
+    <main id="startScreen" class="start-screen" aria-label="五子棋开始界面">
+      <button id="enterGameButton" class="enter-game-button" type="button" aria-label="开始五子棋对局">
+        <span>开始游戏</span>
+      </button>
+    </main>
+
+    <main id="gameSelectScreen" class="game-select-screen" aria-label="选择棋类游戏" hidden>
+      <section class="curtain-stage" aria-label="竹帘游戏选择区">
+        <img id="curtainAnimation" class="curtain-animation" alt="正在展开的竹帘" />
+        <button id="gomokuGameButton" class="gomoku-game-button" type="button" aria-label="选择五子棋" disabled>
+          <img src="assets/gomoku.png" alt="五子棋" />
+        </button>
+      </section>
+    </main>
+
+    <section id="setupScreen" class="setup-screen" role="dialog" aria-modal="true" aria-label="游戏模式选择" hidden>
+      <section class="setup-panel">
+        <p class="eyebrow">选择模式</p>
+        <div class="mode-options" role="group" aria-label="游戏模式">
+          <button id="pvpModeButton" class="image-choice" type="button" aria-pressed="false">
+            <img src="assets/pvp.png" alt="双人模式" />
+          </button>
+          <button id="pveModeButton" class="image-choice" type="button" aria-pressed="false">
+            <img src="assets/pve.png" alt="单人模式" />
+          </button>
+        </div>
+
+        <section id="difficultySection" class="difficulty-section" aria-label="AI 难度" hidden>
+          <p class="eyebrow">选择难度</p>
+          <div class="difficulty-options" role="group" aria-label="AI 难度">
+            <button class="image-choice difficulty-choice" type="button" data-difficulty="easy" aria-pressed="false">
+              <img src="assets/easy.png" alt="简单" />
+            </button>
+            <button class="image-choice difficulty-choice" type="button" data-difficulty="normal" aria-pressed="true">
+              <img src="assets/normal.png" alt="普通" />
+            </button>
+            <button class="image-choice difficulty-choice" type="button" data-difficulty="hard" aria-pressed="false">
+              <img src="assets/hard.png" alt="困难" />
+            </button>
+          </div>
+          <p id="difficultyHint" class="setup-hint">普通：AI 思考 50 毫秒</p>
+        </section>
+
+        <button id="startGameButton" class="start-match-button" type="button" disabled>
+          <img src="assets/start.png" alt="开始游戏" />
+        </button>
+        <p id="setupHint" class="setup-hint">请选择单人或双人模式</p>
+        <button class="main-menu-button" type="button" aria-label="返回主菜单" title="返回主菜单">
+          <img src="assets/home.png" alt="" />
+        </button>
+      </section>
+    </section>
+
+    <main id="gameScreen" class="game-shell" aria-label="五子棋人机对弈" hidden>
+      <button class="main-menu-button" type="button" aria-label="返回主菜单" title="返回主菜单">
+        <img src="assets/home.png" alt="" />
+      </button>
+      <header class="game-header">
+        <p class="eyebrow">GOMOKU</p>
+        <h1>五子棋</h1>
+        <p id="gameStatus" class="game-status" aria-live="polite">正在准备棋局…</p>
+      </header>
+
+      <section class="game-layout">
+        <div class="board-wrap">
+          <canvas
+            id="gameBoard"
+            width="665"
+            height="665"
+            tabindex="0"
+            aria-label="五子棋棋盘，点击交叉点落下黑棋"
+          ></canvas>
+        </div>
+
+        <aside class="side-panel" aria-label="对局信息和操作">
+          <section id="playerCard" class="score-card" aria-label="你的得分">
+            <div class="piece-bottle">
+              <img id="playerBottle" src="assets/black_bottle.png" alt="黑棋棋罐" />
+            </div>
+            <div class="score-copy">
+              <span id="playerLabel">你 · 黑棋</span>
+              <strong id="playerScore">0</strong>
+            </div>
+          </section>
+
+          <section id="aiCard" class="score-card" aria-label="AI 得分">
+            <div class="piece-bottle">
+              <img id="aiBottle" src="assets/white_bottle.png" alt="白棋棋罐" />
+            </div>
+            <div class="score-copy">
+              <span id="aiLabel">AI · 白棋</span>
+              <strong id="aiScore">0</strong>
+            </div>
+          </section>
+
+          <div class="controls" aria-label="游戏操作">
+            <button id="undoButton" class="control-button" type="button" title="悔棋">
+              <img src="assets/replay.png" alt="" />
+              <span>悔棋</span>
+            </button>
+            <button id="surrenderButton" class="control-button" type="button" title="投降">
+              <img src="assets/surrender.png" alt="" />
+              <span>投降</span>
+            </button>
+            <button id="startButton" class="control-button" type="button" title="重新开始">
+              <img src="assets/rematch.png" alt="" />
+              <span>重新开始</span>
+            </button>
+          </div>
+
+          <p class="score-note">重新开始会清空棋盘，保留本次对局的比分。</p>
+        </aside>
+      </section>
+    </main>
+
+    <dialog id="resultDialog" aria-labelledby="dialogTitle">
+      <div class="dialog-content">
+        <p id="dialogEyebrow" class="eyebrow">本局结果</p>
+        <h2 id="dialogTitle">对局结束</h2>
+        <p id="dialogMessage"></p>
+        <button id="dialogCloseButton" type="button">知道了</button>
+      </div>
+    </dialog>
+
+    <script type="module" src="game.js"></script>
+  </body>
+</html>

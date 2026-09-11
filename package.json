@@ -1,0 +1,13 @@
+{
+  "name": "gomoku-web",
+  "version": "1.0.0",
+  "private": true,
+  "description": "带 PentaZen AI 的五子棋网站",
+  "scripts": {
+    "start": "node backend/server.js",
+    "check": "node --check backend/server.js && node --check frontend/game.js"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}

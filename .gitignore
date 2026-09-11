@@ -1,0 +1,6 @@
+.DS_Store
+.vscode/
+**/.DS_Store
+PentaZen/build/
+PentaZen/PentaZen
+*.zip
