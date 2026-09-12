@@ -5,7 +5,7 @@
   "description": "带 PentaZen AI 的五子棋网站",
   "scripts": {
     "start": "node backend/server.js",
-    "check": "node --check backend/server.js && node --check frontend/game.js"
+    "check": "node --check backend/server.js && node --check frontend/game.js && node --check frontend/local-game.js && node --check wasm/pentazen-worker.js"
   },
   "engines": {
     "node": ">=22"

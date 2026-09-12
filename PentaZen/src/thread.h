@@ -13,9 +13,11 @@
 #include "board.h"
 #include "search.h"
 
-#include <condition_variable>
 #include <mutex>
+#ifndef PENTAZEN_WASM
+#include <condition_variable>
 #include <thread>
+#endif
 
 // Thread class keeps together thread and search related stuff
 class Thread {
@@ -50,11 +52,16 @@ public:
 
 private:
     // Thread related stuff
+#ifdef PENTAZEN_WASM
+    size_t idx;
+    bool   searching = false;
+#else
     std::mutex              mutex;
     std::condition_variable cv;
     size_t                  idx;
     bool                    exit = false, searching = true; // Set before starting std::thread
     std::thread             stdThread;
+#endif
 };
 
 // MainThread is a derived struct specific for main thread

@@ -52,6 +52,9 @@ void TranspositionTable::resize(size_t mbSize) {
 // TranspositionTable::clear() initializes the entire transposition table to zero,
 // in a multi-threaded way.
 void TranspositionTable::clear() {
+#ifdef PENTAZEN_WASM
+    std::memset(table, 0, clusterCount * sizeof(Cluster));
+#else
     std::vector<std::thread> threads;
 
     for (size_t idx = 0; idx < Threads.threadNum; ++idx) {
@@ -73,6 +76,7 @@ void TranspositionTable::clear() {
 
     for (std::thread &th : threads)
         th.join();
+#endif
 }
 
 // TranspositionTable::probe() looks up the current position in the transposition

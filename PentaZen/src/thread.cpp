@@ -16,6 +16,13 @@ ThreadPool Threads;
 
 // Thread constructor launches the thread and waits until it goes to sleep
 // in idle_loop(). Note that 'searching' and 'exit' should be already set.
+#ifdef PENTAZEN_WASM
+Thread::Thread(size_t n)
+    : idx(n) {
+}
+
+Thread::~Thread() = default;
+#else
 Thread::Thread(size_t n)
     : idx(n), stdThread(&Thread::idle_loop, this) {
     wait_for_search_finished();
@@ -30,6 +37,7 @@ Thread::~Thread() {
     start_searching();
     stdThread.join();
 }
+#endif
 
 // Thread::clear_history() resets pv and histories
 void Thread::clear_history() {
@@ -52,21 +60,30 @@ void Thread::update_history(Move m) {
 
 // Thread::start_searching() wakes up the thread that will start the search
 void Thread::start_searching() {
+#ifdef PENTAZEN_WASM
+    searching = true;
+    search();
+    searching = false;
+#else
     std::lock_guard<std::mutex> lk(mutex);
     searching = true;
     cv.notify_one(); // Wake up the thread in idle_loop()
+#endif
 }
 
 // Thread::wait_for_search_finished() blocks on the condition variable
 // until the thread has finished searching.
 void Thread::wait_for_search_finished() {
+#ifndef PENTAZEN_WASM
     std::unique_lock<std::mutex> lk(mutex);
     cv.wait(lk, [&] { return !searching; });
+#endif
 }
 
 // Thread::idle_loop() is where the thread is parked, blocked on the
 // condition variable, when it has no work to do.
 void Thread::idle_loop() {
+#ifndef PENTAZEN_WASM
     // If OS already scheduled us on a different group than 0 then don't overwrite
     // the choice, eventually we are one of many one-threaded processes running on
     // some Windows NUMA hardware, for instance in fishtest. To make it simple,
@@ -88,6 +105,7 @@ void Thread::idle_loop() {
 
         search();
     }
+#endif
 }
 
 // ThreadPool::set() creates/destroys threads to match the requested number.

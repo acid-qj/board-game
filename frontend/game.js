@@ -1,4 +1,5 @@
-import createGomokuModule from "/wasm/gomoku.js";
+import createGomokuModule from "../wasm/gomoku.js";
+import { localRequest } from "./local-game.js";
 
 const BOARD_SIZE = 15;
 const BOARD_ORIGIN_X = 19;
@@ -211,19 +212,7 @@ function showDialog(eyebrow, title, message) {
 }
 
 async function request(endpoint, body) {
-  const isStateRequest = endpoint.startsWith("/state");
-  const response = await fetch(endpoint, {
-    method: isStateRequest ? "GET" : "POST",
-    headers: isStateRequest ? undefined : { "Content-Type": "application/json" },
-    body: isStateRequest ? undefined : JSON.stringify({ gameId, ...body }),
-  });
-  const data = await response.json();
-  if (!response.ok || !data.success) {
-    const error = new Error(data.message || "请求失败");
-    error.data = data;
-    throw error;
-  }
-  return data;
+  return localRequest(endpoint, { gameId, ...body });
 }
 
 function getBoardPosition(event) {
@@ -453,6 +442,10 @@ startGameButton.addEventListener("click", async () => {
   } finally {
     localBusy = false;
     startGameButton.disabled = !selectedMode;
+    if (!gameScreen.hidden) {
+      updateStatus();
+      updateControls();
+    }
   }
 });
 
