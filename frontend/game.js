@@ -11,6 +11,12 @@ const WHITE = 2;
 const EMPTY = 0;
 const GAME_ID_KEY = "gomoku-game-id";
 
+let onlineApiPromise;
+const getOnlineApi = () => {
+  onlineApiPromise ||= import("./supabase-client.js");
+  return onlineApiPromise;
+};
+
 // 坐标约定：棋盘左上角交叉点为 (0,0)，向右 x 增大，向下 y 增大。
 // 与后端通信统一使用 { x, y, player }；棋盘二维数组使用 board[y][x]。
 const gameId = sessionStorage.getItem(GAME_ID_KEY)
@@ -32,10 +38,16 @@ const difficultyButtons = [...document.querySelectorAll(".difficulty-choice")];
 const difficultyHint = document.getElementById("difficultyHint");
 const startGameButton = document.getElementById("startGameButton");
 const setupHint = document.getElementById("setupHint");
+const pvpSection = document.getElementById("pvpSection");
+const pvpTypeButtons = [...document.querySelectorAll("[data-pvp-type]")];
+const joinRoomFields = document.getElementById("joinRoomFields");
+const roomCodeInput = document.getElementById("roomCodeInput");
+const onlineHint = document.getElementById("onlineHint");
 const mainMenuButtons = [...document.querySelectorAll(".main-menu-button")];
 const canvas = document.getElementById("gameBoard");
 const ctx = canvas.getContext("2d");
 const gameStatus = document.getElementById("gameStatus");
+const onlineRoomInfo = document.getElementById("onlineRoomInfo");
 const playerCard = document.getElementById("playerCard");
 const aiCard = document.getElementById("aiCard");
 const playerScore = document.getElementById("playerScore");
@@ -47,10 +59,23 @@ const aiLabel = document.getElementById("aiLabel");
 const undoButton = document.getElementById("undoButton");
 const surrenderButton = document.getElementById("surrenderButton");
 const startButton = document.getElementById("startButton");
+const scoreNote = document.querySelector(".score-note");
 const resultDialog = document.getElementById("resultDialog");
 const dialogEyebrow = document.getElementById("dialogEyebrow");
 const dialogTitle = document.getElementById("dialogTitle");
 const dialogMessage = document.getElementById("dialogMessage");
+const accountButton = document.getElementById("accountButton");
+const accountButtonText = document.getElementById("accountButtonText");
+const authDialog = document.getElementById("authDialog");
+const authForm = document.getElementById("authForm");
+const authDialogTitle = document.getElementById("authDialogTitle");
+const usernameInput = document.getElementById("usernameInput");
+const passwordInput = document.getElementById("passwordInput");
+const authError = document.getElementById("authError");
+const loginButton = document.getElementById("loginButton");
+const registerButton = document.getElementById("registerButton");
+const logoutButton = document.getElementById("logoutButton");
+const authCancelButton = document.getElementById("authCancelButton");
 
 const boardImage = new Image();
 const blackImage = new Image();
@@ -67,6 +92,12 @@ let hasEnteredGame = false;
 let navigationVersion = 0;
 let selectedMode = null;
 let selectedDifficulty = "normal";
+let selectedPvpType = "local";
+let account = null;
+let onlineRoomId = null;
+let onlineRoomCode = null;
+let unsubscribeOnlineRoom = null;
+let refreshingOnlineRoom = false;
 let state = {
   board: null,
   mode: "pve",
@@ -132,15 +163,22 @@ function syncBoard(serverBoard) {
 }
 
 function interactionLocked() {
-  return !cppBoard || localBusy || state.aiBusy || state.transitioning || state.gameOver;
+  return !cppBoard
+    || localBusy
+    || state.aiBusy
+    || state.transitioning
+    || state.gameOver
+    || (state.mode === "online" && state.currentPlayer !== state.playerColor);
 }
 
 function updateControls() {
   const locked = interactionLocked();
   canvas.classList.toggle("is-locked", locked);
-  undoButton.disabled = !cppBoard || localBusy || state.aiBusy || state.transitioning || state.moveCount === 0;
+  undoButton.disabled = state.mode === "online"
+    || !cppBoard || localBusy || state.aiBusy || state.transitioning || state.moveCount === 0;
   surrenderButton.disabled = !cppBoard || localBusy || state.aiBusy || state.transitioning || state.gameOver;
-  startButton.disabled = !cppBoard || localBusy || state.aiBusy || state.transitioning;
+  startButton.disabled = state.mode === "online"
+    || !cppBoard || localBusy || state.aiBusy || state.transitioning;
 }
 
 function updateTurnFrame() {
@@ -151,7 +189,19 @@ function updateTurnFrame() {
 }
 
 function updateStatus(message) {
-  if (state.mode === "pvp") {
+  if (state.mode === "online") {
+    if (localBusy) {
+      gameStatus.textContent = "正在同步棋局…";
+    } else if (state.onlineStatus === "waiting") {
+      gameStatus.textContent = "等待另一位玩家输入房间号加入…";
+    } else if (state.gameOver) {
+      gameStatus.textContent = state.reason || "本局已经结束。";
+    } else if (state.currentPlayer === state.playerColor) {
+      gameStatus.textContent = message || "轮到你落子。";
+    } else {
+      gameStatus.textContent = message || `等待${state.opponentName || "对手"}落子…`;
+    }
+  } else if (state.mode === "pvp") {
     if (localBusy) {
       gameStatus.textContent = "正在切换回合…";
     } else if (state.gameOver) {
@@ -183,12 +233,22 @@ function updateState(data, message) {
   playerBottle.alt = playerIsBlack ? "黑棋棋罐" : "白棋棋罐";
   aiBottle.src = playerIsBlack ? "assets/white_bottle.png" : "assets/black_bottle.png";
   aiBottle.alt = playerIsBlack ? "白棋棋罐" : "黑棋棋罐";
-  playerLabel.textContent = state.mode === "pvp"
-    ? `玩家 1 · ${playerIsBlack ? "黑棋" : "白棋"}`
-    : `你 · ${playerIsBlack ? "黑棋" : "白棋"}`;
-  aiLabel.textContent = state.mode === "pvp"
-    ? `玩家 2 · ${playerIsBlack ? "白棋" : "黑棋"}`
-    : `AI · ${playerIsBlack ? "白棋" : "黑棋"}`;
+  if (state.mode === "online") {
+    playerLabel.textContent = `${state.playerName || "你"} · ${playerIsBlack ? "黑棋" : "白棋"}`;
+    aiLabel.textContent = `${state.opponentName || "等待对手"} · ${playerIsBlack ? "白棋" : "黑棋"}`;
+  } else {
+    playerLabel.textContent = state.mode === "pvp"
+      ? `玩家 1 · ${playerIsBlack ? "黑棋" : "白棋"}`
+      : `你 · ${playerIsBlack ? "黑棋" : "白棋"}`;
+    aiLabel.textContent = state.mode === "pvp"
+      ? `玩家 2 · ${playerIsBlack ? "白棋" : "黑棋"}`
+      : `AI · ${playerIsBlack ? "白棋" : "黑棋"}`;
+  }
+  onlineRoomInfo.hidden = state.mode !== "online";
+  onlineRoomInfo.textContent = state.mode === "online" ? `房间号：${onlineRoomCode}` : "";
+  scoreNote.textContent = state.mode === "online"
+    ? "在线对战暂不支持悔棋和重新开始；投降后本局结束。"
+    : "重新开始会清空棋盘，保留本次对局的比分。";
   updateStatus(message || data.message);
   updateControls();
 
@@ -197,6 +257,8 @@ function updateState(data, message) {
       ? "本局平局"
       : state.mode === "pvp"
         ? `${state.winner === state.playerColor ? "玩家 1" : "玩家 2"} 获胜`
+        : state.mode === "online"
+          ? state.winner === state.playerColor ? "你赢了" : `${state.opponentName || "对手"}获胜`
         : state.winner === state.playerColor ? "你赢了" : "AI 获胜";
     showDialog("本局结果", title, state.reason || "本局结束，比分已更新。");
   }
@@ -210,6 +272,166 @@ function showDialog(eyebrow, title, message) {
     resultDialog.showModal();
   }
 }
+
+function setAccount(nextAccount) {
+  account = nextAccount;
+  accountButtonText.textContent = account ? account.username : "登录";
+  onlineHint.textContent = account
+    ? `当前账号：${account.username}`
+    : selectedPvpType === "local" ? "同屏双人不需要登录" : "在线对战需要先登录";
+}
+
+function setAuthDialogMode() {
+  const credentialControls = [
+    usernameInput,
+    passwordInput,
+    loginButton,
+    registerButton,
+    ...authForm.querySelectorAll("label"),
+  ];
+  for (const control of credentialControls) control.hidden = Boolean(account);
+  logoutButton.hidden = !account;
+  authDialogTitle.textContent = account ? `已登录：${account.username}` : "账号登录";
+  authError.textContent = "";
+}
+
+function openAuthDialog() {
+  setAuthDialogMode();
+  if (!authDialog.open) authDialog.showModal();
+  if (!account) usernameInput.focus();
+}
+
+async function runAuthAction(action) {
+  authError.textContent = "正在连接…";
+  loginButton.disabled = true;
+  registerButton.disabled = true;
+  try {
+    const api = await getOnlineApi();
+    const nextAccount = await action(api, usernameInput.value, passwordInput.value);
+    setAccount(nextAccount);
+    passwordInput.value = "";
+    authDialog.close();
+    setupHint.textContent = "登录成功，可以创建或加入在线房间。";
+  } catch (error) {
+    authError.textContent = error.message || "登录失败，请重试";
+  } finally {
+    loginButton.disabled = false;
+    registerButton.disabled = false;
+  }
+}
+
+accountButton.addEventListener("click", openAuthDialog);
+authCancelButton.addEventListener("click", () => authDialog.close());
+authForm.addEventListener("submit", (event) => {
+  event.preventDefault();
+  runAuthAction((api, username, password) => api.signInWithUsername(username, password));
+});
+registerButton.addEventListener("click", () => {
+  runAuthAction((api, username, password) => api.signUpWithUsername(username, password));
+});
+logoutButton.addEventListener("click", async () => {
+  logoutButton.disabled = true;
+  try {
+    const api = await getOnlineApi();
+    await api.signOutAccount();
+    setAccount(null);
+    authDialog.close();
+    if (state.mode === "online") returnToMainMenu();
+  } catch (error) {
+    authError.textContent = error.message || "退出失败，请重试";
+  } finally {
+    logoutButton.disabled = false;
+  }
+});
+
+async function restoreAccount() {
+  try {
+    const api = await getOnlineApi();
+    setAccount(await api.getCurrentAccount());
+  } catch (error) {
+    console.warn("Supabase account restore failed", error);
+  }
+}
+
+function onlineReason(room, profilesById) {
+  if (room.status === "waiting") return "房间已创建，正在等待对手。";
+  if (room.status !== "finished") return null;
+  if (room.finish_reason === "draw") return "棋盘已满，本局平局。";
+  const winnerName = profilesById.get(room.winner_id) || "获胜者";
+  return room.finish_reason === "surrender"
+    ? `对方投降，${winnerName}获胜。`
+    : `${winnerName}五子连珠，获得胜利！`;
+}
+
+async function refreshOnlineRoom() {
+  if (!onlineRoomId || refreshingOnlineRoom) return;
+  refreshingOnlineRoom = true;
+  try {
+    const api = await getOnlineApi();
+    const { room, moves, profiles } = await api.loadOnlineRoom(onlineRoomId);
+    const profilesById = new Map(profiles.map((profile) => [profile.id, profile.username]));
+    const board = Array.from({ length: BOARD_SIZE }, () => Array(BOARD_SIZE).fill(EMPTY));
+    for (const move of moves) board[move.y][move.x] = move.player;
+    const playerColor = room.black_user_id === account.id ? BLACK : WHITE;
+    const opponentId = playerColor === BLACK ? room.white_user_id : room.black_user_id;
+    updateState({
+      board,
+      mode: "online",
+      onlineStatus: room.status,
+      gameOver: room.status === "finished",
+      aiBusy: false,
+      transitioning: room.status === "waiting",
+      playerColor,
+      currentPlayer: room.status === "playing" ? room.current_player : null,
+      moveCount: moves.length,
+      winner: room.winner_id
+        ? (room.winner_id === room.black_user_id ? BLACK : WHITE)
+        : null,
+      draw: room.finish_reason === "draw",
+      reason: onlineReason(room, profilesById),
+      playerName: account.username,
+      opponentName: opponentId ? profilesById.get(opponentId) : "等待对手",
+      scores: { player: 0, ai: 0 },
+    });
+  } catch (error) {
+    updateStatus(error.message || "房间同步失败，请刷新页面重试。");
+  } finally {
+    refreshingOnlineRoom = false;
+  }
+}
+
+async function enterOnlineRoom(room) {
+  await initialiseBoard();
+  onlineRoomId = room.id;
+  onlineRoomCode = room.code;
+  if (unsubscribeOnlineRoom) await unsubscribeOnlineRoom();
+  const api = await getOnlineApi();
+  unsubscribeOnlineRoom = await api.subscribeToOnlineRoom(onlineRoomId, refreshOnlineRoom);
+  setupScreen.hidden = true;
+  gameSelectScreen.hidden = true;
+  gameScreen.hidden = false;
+  await refreshOnlineRoom();
+  canvas.focus();
+}
+
+async function startOnlineRoom() {
+  if (!account) {
+    openAuthDialog();
+    throw new Error("请先登录，再开始在线对战");
+  }
+  const api = await getOnlineApi();
+  if (selectedPvpType === "create") {
+    await enterOnlineRoom(await api.createOnlineRoom());
+    return;
+  }
+  const code = roomCodeInput.value.trim().toUpperCase();
+  if (!/^[0-9A-F]{6}$/.test(code)) {
+    throw new Error("请输入正确的 6 位房间号");
+  }
+  await enterOnlineRoom(await api.joinOnlineRoom(code));
+}
+
+restoreAccount();
 
 async function request(endpoint, body) {
   return localRequest(endpoint, { gameId, ...body });
@@ -258,9 +480,15 @@ canvas.addEventListener("click", async (event) => {
   updateControls();
 
   try {
-    const data = await request("/move", { x, y, player: movingPlayer });
-    previewTurnColor = null;
-    updateState(data, data.message);
+    if (state.mode === "online") {
+      const api = await getOnlineApi();
+      await api.playOnlineMove(onlineRoomCode, x, y);
+      await refreshOnlineRoom();
+    } else {
+      const data = await request("/move", { x, y, player: movingPlayer });
+      previewTurnColor = null;
+      updateState(data, data.message);
+    }
   } catch (error) {
     previewTurnColor = null;
     showError(error);
@@ -273,7 +501,7 @@ canvas.addEventListener("click", async (event) => {
 });
 
 startButton.addEventListener("click", async () => {
-  if (localBusy || state.aiBusy || state.transitioning) {
+  if (state.mode === "online" || localBusy || state.aiBusy || state.transitioning) {
     return;
   }
   localBusy = true;
@@ -292,7 +520,7 @@ startButton.addEventListener("click", async () => {
 });
 
 undoButton.addEventListener("click", async () => {
-  if (undoButton.disabled) {
+  if (state.mode === "online" || undoButton.disabled) {
     return;
   }
   localBusy = true;
@@ -311,7 +539,9 @@ undoButton.addEventListener("click", async () => {
 });
 
 surrenderButton.addEventListener("click", async () => {
-  const prompt = state.mode === "pvp"
+  const prompt = state.mode === "online"
+    ? "确定投降吗？本局将立即结束。"
+    : state.mode === "pvp"
     ? `确定 ${state.currentPlayer === state.playerColor ? "玩家 1" : "玩家 2"} 认输吗？对方将获得 1 分，并开始新的一局。`
     : "确定投降吗？AI 将获得 1 分，并开始新的一局。";
   if (surrenderButton.disabled || !window.confirm(prompt)) {
@@ -321,9 +551,15 @@ surrenderButton.addEventListener("click", async () => {
   updateStatus();
   updateControls();
   try {
-    const data = await request("/surrender", {});
-    updateState(data, data.message);
-    showDialog("本局结果", state.mode === "pvp" ? "本局认输" : "你已投降", data.message);
+    if (state.mode === "online") {
+      const api = await getOnlineApi();
+      await api.surrenderOnlineRoom(onlineRoomCode);
+      await refreshOnlineRoom();
+    } else {
+      const data = await request("/surrender", {});
+      updateState(data, data.message);
+      showDialog("本局结果", state.mode === "pvp" ? "本局认输" : "你已投降", data.message);
+    }
   } catch (error) {
     showError(error);
   } finally {
@@ -364,6 +600,12 @@ gomokuGameButton.addEventListener("click", () => {
 
 function returnToMainMenu() {
   navigationVersion += 1;
+  if (unsubscribeOnlineRoom) {
+    unsubscribeOnlineRoom();
+    unsubscribeOnlineRoom = null;
+  }
+  onlineRoomId = null;
+  onlineRoomCode = null;
   if (resultDialog.open) {
     resultDialog.close();
   }
@@ -389,8 +631,27 @@ function selectMode(mode) {
   pvpModeButton.setAttribute("aria-pressed", String(!isPve));
   pveModeButton.setAttribute("aria-pressed", String(isPve));
   difficultySection.hidden = !isPve;
+  pvpSection.hidden = isPve;
   startGameButton.disabled = false;
-  setupHint.textContent = isPve ? "请选择 AI 难度后开始游戏" : "双人模式：玩家 1 执黑棋先行";
+  setupHint.textContent = isPve
+    ? "请选择 AI 难度后开始游戏"
+    : selectedPvpType === "local" ? "同屏双人：玩家 1 执黑棋先行" : "选择创建或加入在线房间";
+}
+
+function selectPvpType(type) {
+  selectedPvpType = type;
+  for (const button of pvpTypeButtons) {
+    const selected = button.dataset.pvpType === type;
+    button.classList.toggle("is-selected", selected);
+    button.setAttribute("aria-pressed", String(selected));
+  }
+  joinRoomFields.hidden = type !== "join";
+  onlineHint.textContent = type === "local"
+    ? "同屏双人不需要登录"
+    : account ? `当前账号：${account.username}` : "在线对战需要先登录";
+  setupHint.textContent = type === "local"
+    ? "同屏双人：玩家 1 执黑棋先行"
+    : type === "create" ? "开始后会生成 6 位房间号" : "输入朋友发来的房间号后开始";
 }
 
 function selectDifficulty(difficulty) {
@@ -407,6 +668,12 @@ function selectDifficulty(difficulty) {
 
 pvpModeButton.addEventListener("click", () => selectMode("pvp"));
 pveModeButton.addEventListener("click", () => selectMode("pve"));
+pvpTypeButtons.forEach((button) => {
+  button.addEventListener("click", () => selectPvpType(button.dataset.pvpType));
+});
+roomCodeInput.addEventListener("input", () => {
+  roomCodeInput.value = roomCodeInput.value.toUpperCase().replace(/[^0-9A-F]/g, "");
+});
 difficultyButtons.forEach((button) => {
   button.addEventListener("click", () => selectDifficulty(button.dataset.difficulty));
 });
@@ -422,6 +689,10 @@ startGameButton.addEventListener("click", async () => {
   startGameButton.disabled = true;
   setupHint.textContent = "正在准备棋局…";
   try {
+    if (selectedMode === "pvp" && selectedPvpType !== "local") {
+      await startOnlineRoom();
+      return;
+    }
     await initialiseBoard();
     const data = await request("/start", {
       mode: selectedMode,

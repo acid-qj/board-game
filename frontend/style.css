@@ -30,6 +30,31 @@ button {
   font: inherit;
 }
 
+.account-button {
+  position: fixed;
+  z-index: 30;
+  top: 18px;
+  right: 20px;
+  min-width: 88px;
+  padding: 9px 18px;
+  border: 1px solid rgb(91 57 31 / 52%);
+  border-radius: 999px;
+  color: #3f291b;
+  background: rgb(255 248 228 / 82%);
+  box-shadow: 0 5px 14px rgb(45 27 14 / 18%);
+  cursor: pointer;
+  font-family: "PingFang SC", sans-serif;
+  font-size: 0.9rem;
+  backdrop-filter: blur(5px);
+}
+
+.account-button:hover,
+.account-button:focus-visible {
+  outline: none;
+  background: #fff8e4;
+  transform: translateY(-2px);
+}
+
 .main-menu-button {
   position: fixed;
   z-index: 20;
@@ -250,6 +275,64 @@ button {
   gap: 12px;
 }
 
+.pvp-section {
+  display: grid;
+  justify-items: center;
+  gap: 12px;
+}
+
+.text-choice-row {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 9px;
+}
+
+.text-choice {
+  padding: 9px 16px;
+  border: 1px solid rgb(126 78 38 / 45%);
+  border-radius: 999px;
+  color: #5b3c27;
+  background: rgb(255 251 240 / 72%);
+  cursor: pointer;
+  font-family: "PingFang SC", sans-serif;
+}
+
+.text-choice.is-selected {
+  border-color: #884429;
+  color: #fffaf1;
+  background: #8d4930;
+  box-shadow: 0 4px 10px rgb(72 37 22 / 22%);
+}
+
+.join-room-fields {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  font-family: "PingFang SC", sans-serif;
+}
+
+.join-room-fields input,
+.auth-form input {
+  border: 1px solid rgb(112 78 52 / 42%);
+  border-radius: 8px;
+  color: #302117;
+  background: rgb(255 253 247 / 90%);
+  outline: none;
+}
+
+.join-room-fields input {
+  width: 180px;
+  padding: 8px 10px;
+  text-transform: uppercase;
+}
+
+.join-room-fields input:focus,
+.auth-form input:focus {
+  border-color: #9b5b2b;
+  box-shadow: 0 0 0 3px rgb(173 111 47 / 18%);
+}
+
 .image-choice,
 .start-match-button {
   padding: 0;
@@ -348,6 +431,16 @@ h1 {
   color: #6c5645;
   font-family: "PingFang SC", sans-serif;
   font-size: 0.9rem;
+}
+
+.online-room-info {
+  grid-column: 1 / -1;
+  margin: 5px 0 0;
+  color: #813d26;
+  font-family: "PingFang SC", sans-serif;
+  font-size: 0.9rem;
+  font-weight: 650;
+  letter-spacing: 0.08em;
 }
 
 .game-layout {
@@ -509,6 +602,75 @@ dialog {
   box-shadow: 0 20px 60px rgb(30 20 12 / 30%);
   color: #2e2118;
   background: #fffdf8;
+}
+
+.auth-dialog {
+  width: min(420px, calc(100% - 32px));
+}
+
+.auth-form {
+  display: grid;
+  gap: 10px;
+  padding: 12px 8px 6px;
+  font-family: "PingFang SC", sans-serif;
+}
+
+.auth-form h2 {
+  margin: 2px 0 0;
+  font-family: "Noto Serif SC", "Songti SC", serif;
+  font-size: 1.7rem;
+}
+
+.auth-note {
+  margin: 0 0 5px;
+  color: #766050;
+  font-size: 0.88rem;
+}
+
+.auth-form label {
+  color: #5d4433;
+  font-size: 0.86rem;
+  font-weight: 650;
+}
+
+.auth-form input {
+  width: 100%;
+  padding: 10px 12px;
+  font-size: 1rem;
+}
+
+.auth-error {
+  min-height: 1.4em;
+  margin: 0;
+  color: #9b2f24;
+  font-size: 0.83rem;
+}
+
+.auth-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 3px;
+}
+
+.auth-actions button {
+  padding: 8px 14px;
+  border: 1px solid #7e3f25;
+  border-radius: 7px;
+  color: #fffaf2;
+  background: #8d4930;
+  cursor: pointer;
+}
+
+.auth-actions button:last-child,
+#registerButton {
+  color: #68432d;
+  background: transparent;
+}
+
+.auth-actions button:disabled {
+  cursor: wait;
+  opacity: 0.55;
 }
 
 dialog::backdrop {

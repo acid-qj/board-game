@@ -10,6 +10,10 @@
   </head>
 
   <body>
+    <button id="accountButton" class="account-button" type="button" aria-label="登录或查看账号">
+      <span id="accountButtonText">登录</span>
+    </button>
+
     <main id="startScreen" class="start-screen" aria-label="五子棋开始界面">
       <button id="enterGameButton" class="enter-game-button" type="button" aria-label="开始五子棋对局">
         <span>开始游戏</span>
@@ -53,6 +57,20 @@
           <p id="difficultyHint" class="setup-hint">普通：AI 思考 50 毫秒</p>
         </section>
 
+        <section id="pvpSection" class="pvp-section" aria-label="双人对战方式" hidden>
+          <p class="eyebrow">选择对战方式</p>
+          <div class="text-choice-row" role="group" aria-label="双人对战方式">
+            <button class="text-choice is-selected" type="button" data-pvp-type="local" aria-pressed="true">同屏双人</button>
+            <button class="text-choice" type="button" data-pvp-type="create" aria-pressed="false">创建房间</button>
+            <button class="text-choice" type="button" data-pvp-type="join" aria-pressed="false">加入房间</button>
+          </div>
+          <div id="joinRoomFields" class="join-room-fields" hidden>
+            <label for="roomCodeInput">房间号</label>
+            <input id="roomCodeInput" type="text" maxlength="6" autocomplete="off" placeholder="输入 6 位房间号" />
+          </div>
+          <p id="onlineHint" class="setup-hint">同屏双人不需要登录</p>
+        </section>
+
         <button id="startGameButton" class="start-match-button" type="button" disabled>
           <img src="assets/start.png" alt="开始游戏" />
         </button>
@@ -71,6 +89,7 @@
         <p class="eyebrow">GOMOKU</p>
         <h1>五子棋</h1>
         <p id="gameStatus" class="game-status" aria-live="polite">正在准备棋局…</p>
+        <p id="onlineRoomInfo" class="online-room-info" hidden></p>
       </header>
 
       <section class="game-layout">
@@ -124,6 +143,25 @@
         </aside>
       </section>
     </main>
+
+    <dialog id="authDialog" class="auth-dialog" aria-labelledby="authDialogTitle">
+      <form id="authForm" class="auth-form">
+        <p class="eyebrow">ONLINE</p>
+        <h2 id="authDialogTitle">账号登录</h2>
+        <p class="auth-note">只需用户名和密码，不需要填写邮箱。</p>
+        <label for="usernameInput">用户名</label>
+        <input id="usernameInput" name="username" type="text" minlength="2" maxlength="20" autocomplete="username" required />
+        <label for="passwordInput">密码</label>
+        <input id="passwordInput" name="password" type="password" minlength="6" autocomplete="current-password" required />
+        <p id="authError" class="auth-error" aria-live="polite"></p>
+        <div class="auth-actions">
+          <button id="loginButton" type="submit">登录</button>
+          <button id="registerButton" type="button">注册新账号</button>
+          <button id="logoutButton" type="button" hidden>退出登录</button>
+          <button id="authCancelButton" type="button">取消</button>
+        </div>
+      </form>
+    </dialog>
 
     <dialog id="resultDialog" aria-labelledby="dialogTitle">
       <div class="dialog-content">
