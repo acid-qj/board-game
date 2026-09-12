@@ -1,5 +1,5 @@
 import createGomokuModule from "../wasm/gomoku.js";
-import { localRequest } from "./local-game.js";
+import { localRequest } from "./local-game.js?v=5";
 
 const BOARD_SIZE = 15;
 const BOARD_ORIGIN_X = 19;
@@ -13,7 +13,7 @@ const GAME_ID_KEY = "gomoku-game-id";
 
 let onlineApiPromise;
 const getOnlineApi = () => {
-  onlineApiPromise ||= import("./supabase-client.js");
+  onlineApiPromise ||= import("./supabase-client.js?v=5");
   return onlineApiPromise;
 };
 
@@ -412,7 +412,7 @@ function outcomeForRecord(record) {
 
 function recordsForCurrentOpponent() {
   if (state.mode === "pve") return gameHistory.filter((record) => record.game_type === "ai");
-  if (state.mode === "pvp") return gameHistory.filter((record) => record.game_type === "local");
+  if (state.mode === "pvp") return [];
   if (state.mode === "online" && state.opponentId) {
     return gameHistory.filter((record) => record.game_type === "online"
       && (record.black_user_id === state.opponentId || record.white_user_id === state.opponentId));
@@ -421,6 +421,10 @@ function recordsForCurrentOpponent() {
 }
 
 function updateHistoricalRecord() {
+  if (state.mode === "pvp") {
+    historyRecordText.textContent = "同屏双人不记录战绩";
+    return;
+  }
   const records = recordsForCurrentOpponent();
   if (!account) {
     historyRecordText.textContent = "登录后记录战绩";

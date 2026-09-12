@@ -120,10 +120,11 @@ function resetRound() {
 }
 
 function createCompletedGame(winner, finishReason) {
+  if (game.mode !== "pve") return null;
   return {
     clientGameId: game.roundId,
-    gameType: game.mode === "pve" ? "ai" : "local",
-    difficulty: game.mode === "pve" ? game.difficulty : null,
+    gameType: "ai",
+    difficulty: game.difficulty,
     playerColor: game.playerColor,
     winnerColor: winner,
     finishReason,

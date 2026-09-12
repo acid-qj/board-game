@@ -172,6 +172,7 @@ export async function loadGameHistory(limit = 1000) {
   const { data, error } = await client
     .from("game_records")
     .select("id, client_game_id, room_id, game_type, owner_id, owner_color, black_user_id, white_user_id, black_name, white_name, difficulty, winner_color, finish_reason, created_at")
+    .neq("game_type", "local")
     .order("created_at", { ascending: false })
     .limit(limit);
   throwIfError(error);
