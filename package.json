@@ -2,10 +2,10 @@
   "name": "gomoku-web",
   "version": "1.0.0",
   "private": true,
-  "description": "带 PentaZen AI 的五子棋网站",
+  "description": "包含五子棋与国际跳棋的网页棋类游戏平台",
   "scripts": {
     "start": "node backend/server.js",
-    "check": "node --check backend/server.js && node --check frontend/game.js && node --check frontend/local-game.js && node --check frontend/supabase-client.js && node --check wasm/pentazen-worker.js"
+    "check": "node --check backend/server.js && node --check frontend/game.js && node --check frontend/local-game.js && node --check frontend/checkers-game.js && node --check frontend/supabase-client.js && node --check wasm/pentazen-worker.js && node --no-warnings --test tests/checkers-rules.test.mjs"
   },
   "engines": {
     "node": ">=22"

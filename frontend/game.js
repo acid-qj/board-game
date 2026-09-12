@@ -1,5 +1,6 @@
 import createGomokuModule from "../wasm/gomoku.js";
 import { localRequest } from "./local-game.js?v=5";
+import { createCheckersController } from "./checkers-game.js?v=7";
 
 const BOARD_SIZE = 15;
 const BOARD_ORIGIN_X = 19;
@@ -31,6 +32,8 @@ const gameScreen = document.getElementById("gameScreen");
 const enterGameButton = document.getElementById("enterGameButton");
 const curtainAnimation = document.getElementById("curtainAnimation");
 const gomokuGameButton = document.getElementById("gomokuGameButton");
+const checkersGameButton = document.getElementById("checkersGameButton");
+const gameEntryButtons = [gomokuGameButton, checkersGameButton];
 const pvpModeButton = document.getElementById("pvpModeButton");
 const pveModeButton = document.getElementById("pveModeButton");
 const difficultySection = document.getElementById("difficultySection");
@@ -92,6 +95,8 @@ const replayPreviousButton = document.getElementById("replayPreviousButton");
 const replayNextButton = document.getElementById("replayNextButton");
 const replayEndButton = document.getElementById("replayEndButton");
 const replayCloseButton = document.getElementById("replayCloseButton");
+const checkersScreen = document.getElementById("checkersScreen");
+const checkersCanvas = document.getElementById("checkersBoard");
 
 const boardImage = new Image();
 const blackImage = new Image();
@@ -107,6 +112,7 @@ let previewTurnColor = null;
 let hasEnteredGame = false;
 let navigationVersion = 0;
 let selectedMode = null;
+let selectedGame = "gomoku";
 let selectedDifficulty = "normal";
 let selectedPvpType = "local";
 let account = null;
@@ -130,6 +136,23 @@ let state = {
   moveCount: 0,
   scores: { player: 0, ai: 0 },
 };
+
+const checkersController = createCheckersController({
+  canvas: checkersCanvas,
+  status: document.getElementById("checkersStatus"),
+  playerOneCard: document.getElementById("checkersPlayerOneCard"),
+  playerTwoCard: document.getElementById("checkersPlayerTwoCard"),
+  playerOneLabel: document.getElementById("checkersPlayerOneLabel"),
+  playerTwoLabel: document.getElementById("checkersPlayerTwoLabel"),
+  playerOnePiece: document.getElementById("checkersPlayerOnePiece"),
+  playerTwoPiece: document.getElementById("checkersPlayerTwoPiece"),
+  playerOneScore: document.getElementById("checkersPlayerOneScore"),
+  playerTwoScore: document.getElementById("checkersPlayerTwoScore"),
+  undoButton: document.getElementById("checkersUndoButton"),
+  surrenderButton: document.getElementById("checkersSurrenderButton"),
+  restartButton: document.getElementById("checkersRestartButton"),
+  onResult: (title, message) => showDialog("本局结果", title, message),
+});
 
 function drawBoard() {
   ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -839,18 +862,38 @@ enterGameButton.addEventListener("click", () => {
   // animated image may finish playing while its parent is still hidden.
   curtainAnimation.src = "assets/bamboo-curtain-unroll.webp?v=2";
   window.setTimeout(() => {
-    gomokuGameButton.disabled = false;
-    gomokuGameButton.classList.add("is-ready");
+    for (const button of gameEntryButtons) {
+      button.disabled = false;
+      button.classList.add("is-ready");
+    }
     gomokuGameButton.focus();
   }, 1900);
 });
 
-gomokuGameButton.addEventListener("click", () => {
-  gomokuGameButton.disabled = true;
-  gomokuGameButton.classList.add("is-inactive");
+function openGameSetup(game) {
+  selectedGame = game;
+  selectedMode = null;
+  selectedPvpType = "local";
+  pvpModeButton.classList.remove("is-selected");
+  pveModeButton.classList.remove("is-selected");
+  pvpModeButton.setAttribute("aria-pressed", "false");
+  pveModeButton.setAttribute("aria-pressed", "false");
+  difficultySection.hidden = true;
+  pvpSection.hidden = true;
+  startGameButton.disabled = true;
+  setupHint.textContent = game === "checkers"
+    ? "请选择双人模式；单人 AI 接入后即可开放"
+    : "请选择单人或双人模式";
+  for (const button of gameEntryButtons) {
+    button.disabled = true;
+    button.classList.add("is-inactive");
+  }
   setupScreen.hidden = false;
   pvpModeButton.focus();
-});
+}
+
+gomokuGameButton.addEventListener("click", () => openGameSetup("gomoku"));
+checkersGameButton.addEventListener("click", () => openGameSetup("checkers"));
 
 function returnToMainMenu() {
   navigationVersion += 1;
@@ -866,11 +909,14 @@ function returnToMainMenu() {
   startScreen.hidden = true;
   setupScreen.hidden = true;
   gameScreen.hidden = true;
+  checkersScreen.hidden = true;
   gameSelectScreen.hidden = false;
-  gomokuGameButton.disabled = false;
-  gomokuGameButton.classList.remove("is-inactive");
-  gomokuGameButton.classList.add("is-ready");
-  gomokuGameButton.focus();
+  for (const button of gameEntryButtons) {
+    button.disabled = false;
+    button.classList.remove("is-inactive");
+    button.classList.add("is-ready");
+  }
+  (selectedGame === "checkers" ? checkersGameButton : gomokuGameButton).focus();
 }
 
 mainMenuButtons.forEach((button) => {
@@ -884,6 +930,15 @@ function selectMode(mode) {
   pveModeButton.classList.toggle("is-selected", isPve);
   pvpModeButton.setAttribute("aria-pressed", String(!isPve));
   pveModeButton.setAttribute("aria-pressed", String(isPve));
+  if (selectedGame === "checkers") {
+    difficultySection.hidden = true;
+    pvpSection.hidden = true;
+    startGameButton.disabled = isPve;
+    setupHint.textContent = isPve
+      ? "国际跳棋 AI 尚未接入；收到 AI 代码后会开放单人模式"
+      : "同屏双人：玩家 1 执黑棋先行，使用 10×10 国际规则";
+    return;
+  }
   difficultySection.hidden = !isPve;
   pvpSection.hidden = isPve;
   startGameButton.disabled = false;
@@ -893,6 +948,7 @@ function selectMode(mode) {
 }
 
 function selectPvpType(type) {
+  if (selectedGame === "checkers") return;
   selectedPvpType = type;
   for (const button of pvpTypeButtons) {
     const selected = button.dataset.pvpType === type;
@@ -950,6 +1006,20 @@ startGameButton.addEventListener("click", async () => {
   startGameButton.disabled = true;
   setupHint.textContent = "正在准备棋局…";
   try {
+    if (selectedGame === "checkers") {
+      if (selectedMode !== "pvp") {
+        setupHint.textContent = "国际跳棋单人 AI 尚未接入，请先选择双人模式。";
+        return;
+      }
+      if (pendingNavigationVersion !== navigationVersion) return;
+      setupScreen.hidden = true;
+      gameSelectScreen.hidden = true;
+      gameScreen.hidden = true;
+      checkersScreen.hidden = false;
+      checkersController.startRound();
+      checkersCanvas.focus();
+      return;
+    }
     if (selectedMode === "pvp" && selectedPvpType !== "local") {
       await startOnlineRoom();
       return;
@@ -973,7 +1043,7 @@ startGameButton.addEventListener("click", async () => {
     }
   } finally {
     localBusy = false;
-    startGameButton.disabled = !selectedMode;
+    startGameButton.disabled = !selectedMode || (selectedGame === "checkers" && selectedMode === "pve");
     if (!gameScreen.hidden) {
       updateStatus();
       updateControls();
