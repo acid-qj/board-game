@@ -3,6 +3,10 @@ const BLACK = 1;
 const WHITE = 2;
 const DIFFICULTY_TIME_LIMITS = { easy: 10, normal: 50, hard: 100 };
 
+function newRoundId() {
+  return globalThis.crypto?.randomUUID?.() || `round-${Date.now()}-${Math.random()}`;
+}
+
 const worker = new Worker(new URL("../wasm/pentazen-worker.js", import.meta.url), { type: "module" });
 let requestId = 0;
 const pendingAIRequests = new Map();
@@ -41,6 +45,8 @@ const game = {
   winner: null,
   reason: null,
   roundResult: null,
+  roundId: newRoundId(),
+  completedGame: null,
 };
 
 function otherColor(color) {
@@ -94,6 +100,7 @@ function getState(message, extra = {}) {
     reason: game.reason,
     moveCount: game.moveHistory.length,
     scores: { ...game.scores },
+    completedGame: game.completedGame,
     ...extra,
   };
 }
@@ -108,14 +115,29 @@ function resetRound() {
   game.winner = null;
   game.reason = null;
   game.roundResult = null;
+  game.roundId = newRoundId();
+  game.completedGame = null;
 }
 
-function finishRound(winner, reason) {
+function createCompletedGame(winner, finishReason) {
+  return {
+    clientGameId: game.roundId,
+    gameType: game.mode === "pve" ? "ai" : "local",
+    difficulty: game.mode === "pve" ? game.difficulty : null,
+    playerColor: game.playerColor,
+    winnerColor: winner,
+    finishReason,
+    moves: game.moveHistory.map(({ x, y, player }) => ({ x, y, player })),
+  };
+}
+
+function finishRound(winner, reason, finishReason = "five") {
   if (game.gameOver) return;
   game.gameOver = true;
   game.currentPlayer = null;
   game.winner = winner;
   game.reason = reason;
+  game.completedGame = createCompletedGame(winner, finishReason);
   const winnerActor = game.mode === "pvp"
     ? (winner === game.playerColor ? "player1" : "player2")
     : (winner === game.playerColor ? "player" : "ai");
@@ -198,7 +220,7 @@ async function move(body) {
     return getState(game.reason, { playerMove, aiMove: null });
   }
   if (isBoardFull(game.board)) {
-    finishRound(null, "棋盘已满，本局平局。");
+    finishRound(null, "棋盘已满，本局平局。", "draw");
     return getState(game.reason, { playerMove, aiMove: null });
   }
   if (game.mode === "pvp") {
@@ -218,7 +240,7 @@ async function move(body) {
     game.moveHistory.push({ ...aiMove, actor: "ai" });
     console.log(`${aiMove.x},${aiMove.y},${aiMove.player}`);
     if (isWin(game.board, aiMove.x, aiMove.y)) finishRound(aiColor, "AI 五子连珠，本局结束。");
-    else if (isBoardFull(game.board)) finishRound(null, "棋盘已满，本局平局。");
+    else if (isBoardFull(game.board)) finishRound(null, "棋盘已满，本局平局。", "draw");
     game.aiBusy = false;
     return getState(game.reason || "轮到你落子。", { playerMove, aiMove });
   } catch (error) {
@@ -234,6 +256,7 @@ async function undo() {
     ? game.moveHistory.length - 1
     : game.moveHistory.map((item) => item.actor).lastIndexOf("player");
   if (lastPlayerMove === -1) throw new Error("还没有可以悔的棋");
+  const retractedRecordId = game.completedGame?.clientGameId || null;
   if (game.roundResult?.scoreAwarded) {
     if (["player", "player1"].includes(game.roundResult.winnerActor)) {
       game.scores.player = Math.max(0, game.scores.player - 1);
@@ -248,9 +271,10 @@ async function undo() {
   game.winner = null;
   game.reason = null;
   game.roundResult = null;
+  game.completedGame = null;
   return getState(game.mode === "pve" && undoneMoves.length === 2
     ? "已悔掉你和 AI 的上一回合。"
-    : "已悔掉最后一步。");
+    : "已悔掉最后一步。", { retractedRecordId });
 }
 
 async function surrender() {
@@ -258,17 +282,22 @@ async function surrender() {
   if (game.mode === "pvp") {
     const winner = otherColor(game.currentPlayer);
     const winnerActor = winner === game.playerColor ? "玩家 1" : "玩家 2";
+    const completedGame = createCompletedGame(winner, "surrender");
     if (winner === game.playerColor) game.scores.player += 1;
     else game.scores.ai += 1;
     await startRound();
-    return getState(`${winnerActor}获胜并得 1 分；已开始新的一局。`, { surrendered: true });
+    return getState(`${winnerActor}获胜并得 1 分；已开始新的一局。`, {
+      surrendered: true,
+      completedGame,
+    });
   }
+  const completedGame = createCompletedGame(otherColor(game.playerColor), "surrender");
   game.scores.ai += 1;
   await startRound(true);
   const message = game.playerColor === BLACK
     ? "你已投降，AI 得 1 分；已开始新的一局，你执黑棋先行。"
     : "你已投降，AI 得 1 分；AI 已执黑棋先行，你执白棋。";
-  return getState(message, { surrendered: true });
+  return getState(message, { surrendered: true, completedGame });
 }
 
 export async function localRequest(endpoint, body = {}) {

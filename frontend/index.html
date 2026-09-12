@@ -6,7 +6,7 @@
     <title>五子棋</title>
     <link rel="preload" as="image" href="assets/bamboo-grove-source.png" />
     <link rel="preload" as="image" href="assets/bamboo-curtain-unroll.webp?v=2" type="image/webp" />
-    <link rel="stylesheet" href="style.css?v=3" />
+    <link rel="stylesheet" href="style.css?v=4" />
   </head>
 
   <body>
@@ -124,6 +124,11 @@
             </div>
           </section>
 
+          <section id="historyRecordCard" class="history-record-card" aria-live="polite">
+            <span>历史战绩</span>
+            <strong id="historyRecordText">尚无记录</strong>
+          </section>
+
           <div class="controls" aria-label="游戏操作">
             <button id="undoButton" class="control-button" type="button" title="悔棋">
               <img src="assets/replay.png" alt="" />
@@ -157,10 +162,42 @@
         <div class="auth-actions">
           <button id="loginButton" type="submit">登录</button>
           <button id="registerButton" type="button">注册新账号</button>
+          <button id="historyButton" type="button" hidden>历史棋局</button>
           <button id="logoutButton" type="button" hidden>退出登录</button>
           <button id="authCancelButton" type="button">取消</button>
         </div>
       </form>
+    </dialog>
+
+    <dialog id="historyDialog" class="history-dialog" aria-labelledby="historyDialogTitle">
+      <section class="history-content">
+        <p class="eyebrow">RECORDS</p>
+        <h2 id="historyDialogTitle">历史棋局</h2>
+        <p id="historySummary" class="history-summary"></p>
+        <div id="historyList" class="history-list"></div>
+        <button id="historyCloseButton" class="dialog-secondary-button" type="button">关闭</button>
+      </section>
+    </dialog>
+
+    <dialog id="replayDialog" class="replay-dialog" aria-labelledby="replayDialogTitle">
+      <section class="replay-content">
+        <div class="replay-heading">
+          <div>
+            <p class="eyebrow">REPLAY</p>
+            <h2 id="replayDialogTitle">棋局复盘</h2>
+            <p id="replayPlayers" class="replay-players"></p>
+          </div>
+          <button id="replayCloseButton" class="dialog-secondary-button" type="button">退出复盘</button>
+        </div>
+        <canvas id="replayBoard" width="665" height="665" aria-label="历史棋局复盘棋盘"></canvas>
+        <div class="replay-controls">
+          <button id="replayStartButton" type="button">回到开局</button>
+          <button id="replayPreviousButton" type="button">上一步</button>
+          <strong id="replayStepText">0 / 0</strong>
+          <button id="replayNextButton" type="button">下一步</button>
+          <button id="replayEndButton" type="button">查看结果</button>
+        </div>
+      </section>
     </dialog>
 
     <dialog id="resultDialog" aria-labelledby="dialogTitle">
@@ -172,6 +209,6 @@
       </div>
     </dialog>
 
-    <script type="module" src="game.js?v=3"></script>
+    <script type="module" src="game.js?v=4"></script>
   </body>
 </html>

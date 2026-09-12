@@ -595,6 +595,25 @@ h1 {
   text-align: center;
 }
 
+.history-record-card {
+  display: grid;
+  justify-items: center;
+  gap: 3px;
+  padding: 10px 12px;
+  border: 1px solid rgb(139 91 43 / 28%);
+  border-radius: 10px;
+  color: #765b47;
+  background: rgb(255 251 240 / 58%);
+  font-family: "PingFang SC", sans-serif;
+  font-size: 0.78rem;
+  text-align: center;
+}
+
+.history-record-card strong {
+  color: #5e3322;
+  font-size: 0.94rem;
+}
+
 dialog {
   width: min(360px, calc(100% - 32px));
   border: 0;
@@ -673,6 +692,158 @@ dialog {
   opacity: 0.55;
 }
 
+.history-dialog {
+  width: min(640px, calc(100% - 28px));
+  max-height: min(760px, calc(100vh - 28px));
+}
+
+.history-content {
+  display: grid;
+  gap: 10px;
+  padding: 10px 6px 4px;
+}
+
+.history-content h2,
+.replay-content h2 {
+  margin: 2px 0 0;
+}
+
+.history-summary,
+.replay-players {
+  margin: 0;
+  color: #70584a;
+  font-family: "PingFang SC", sans-serif;
+  font-size: 0.86rem;
+}
+
+.history-list {
+  display: grid;
+  max-height: min(520px, 60vh);
+  gap: 8px;
+  overflow-y: auto;
+  padding: 2px;
+}
+
+.history-empty {
+  padding: 34px 12px;
+  color: #806c5d;
+  font-family: "PingFang SC", sans-serif;
+  text-align: center;
+}
+
+.history-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 11px 13px;
+  border: 1px solid rgb(126 78 38 / 27%);
+  border-radius: 9px;
+  color: #4f3827;
+  background: rgb(255 252 244 / 84%);
+  cursor: pointer;
+  font-family: "PingFang SC", sans-serif;
+  text-align: left;
+}
+
+.history-item:hover,
+.history-item:focus-visible {
+  border-color: #9a5d30;
+  outline: none;
+  background: #fffaf0;
+}
+
+.history-item-main {
+  display: grid;
+  gap: 3px;
+}
+
+.history-item-main strong {
+  font-size: 0.93rem;
+}
+
+.history-item-main span,
+.history-item time {
+  color: #806a59;
+  font-size: 0.76rem;
+}
+
+.history-result-win {
+  color: #7d281f;
+}
+
+.history-result-loss {
+  color: #545f66;
+}
+
+.dialog-secondary-button {
+  justify-self: end;
+  padding: 8px 16px;
+  border: 1px solid #7e3f25;
+  border-radius: 7px;
+  color: #68432d;
+  background: transparent;
+  cursor: pointer;
+}
+
+.replay-dialog {
+  width: min(820px, calc(100% - 24px));
+  max-height: calc(100vh - 24px);
+}
+
+.replay-content {
+  display: grid;
+  justify-items: center;
+  gap: 12px;
+  padding: 4px;
+}
+
+.replay-heading {
+  display: flex;
+  width: 100%;
+  align-items: start;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+#replayBoard {
+  display: block;
+  width: min(620px, 100%);
+  height: auto;
+  border: 5px solid #5c3921;
+  border-radius: 4px;
+  background: #d8a85d;
+}
+
+.replay-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  font-family: "PingFang SC", sans-serif;
+}
+
+.replay-controls button {
+  padding: 7px 11px;
+  border: 1px solid rgb(126 78 38 / 52%);
+  border-radius: 7px;
+  color: #5b3c27;
+  background: #fffaf0;
+  cursor: pointer;
+}
+
+.replay-controls button:disabled {
+  cursor: not-allowed;
+  opacity: 0.42;
+}
+
+.replay-controls strong {
+  min-width: 70px;
+  text-align: center;
+}
+
 dialog::backdrop {
   background: rgb(38 25 14 / 42%);
 }
@@ -722,7 +893,8 @@ dialog::backdrop {
   }
 
   .controls,
-  .score-note {
+  .score-note,
+  .history-record-card {
     grid-column: 1 / -1;
   }
 }

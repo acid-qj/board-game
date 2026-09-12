@@ -76,6 +76,22 @@ const loginButton = document.getElementById("loginButton");
 const registerButton = document.getElementById("registerButton");
 const logoutButton = document.getElementById("logoutButton");
 const authCancelButton = document.getElementById("authCancelButton");
+const historyButton = document.getElementById("historyButton");
+const historyRecordText = document.getElementById("historyRecordText");
+const historyDialog = document.getElementById("historyDialog");
+const historySummary = document.getElementById("historySummary");
+const historyList = document.getElementById("historyList");
+const historyCloseButton = document.getElementById("historyCloseButton");
+const replayDialog = document.getElementById("replayDialog");
+const replayPlayers = document.getElementById("replayPlayers");
+const replayCanvas = document.getElementById("replayBoard");
+const replayCtx = replayCanvas.getContext("2d");
+const replayStepText = document.getElementById("replayStepText");
+const replayStartButton = document.getElementById("replayStartButton");
+const replayPreviousButton = document.getElementById("replayPreviousButton");
+const replayNextButton = document.getElementById("replayNextButton");
+const replayEndButton = document.getElementById("replayEndButton");
+const replayCloseButton = document.getElementById("replayCloseButton");
 
 const boardImage = new Image();
 const blackImage = new Image();
@@ -98,6 +114,11 @@ let onlineRoomId = null;
 let onlineRoomCode = null;
 let unsubscribeOnlineRoom = null;
 let refreshingOnlineRoom = false;
+let gameHistory = [];
+let replayMoves = [];
+let replayStep = 0;
+const pendingHistorySaves = new Map();
+const savedHistoryIds = new Set();
 let state = {
   board: null,
   mode: "pve",
@@ -251,6 +272,13 @@ function updateState(data, message) {
     : "重新开始会清空棋盘，保留本次对局的比分。";
   updateStatus(message || data.message);
   updateControls();
+  updateHistoricalRecord();
+
+  if (data.completedGame) saveCompletedGame(data.completedGame);
+  if (data.retractedRecordId) retractCompletedGame(data.retractedRecordId);
+  if (state.mode === "online" && state.gameOver && !wasOver) {
+    loadHistoryAndUpdate().catch((error) => console.error("Online history refresh failed", error));
+  }
 
   if (state.gameOver && !wasOver) {
     const title = state.draw
@@ -278,7 +306,11 @@ function setAccount(nextAccount) {
   accountButtonText.textContent = account ? account.username : "登录";
   onlineHint.textContent = account
     ? `当前账号：${account.username}`
-    : selectedPvpType === "local" ? "同屏双人不需要登录" : "在线对战需要先登录";
+    : "开始任何对局前都需要登录";
+  if (!account) {
+    gameHistory = [];
+    historyRecordText.textContent = "登录后记录战绩";
+  }
 }
 
 function setAuthDialogMode() {
@@ -291,6 +323,7 @@ function setAuthDialogMode() {
   ];
   for (const control of credentialControls) control.hidden = Boolean(account);
   logoutButton.hidden = !account;
+  historyButton.hidden = !account;
   authDialogTitle.textContent = account ? `已登录：${account.username}` : "账号登录";
   authError.textContent = "";
 }
@@ -309,6 +342,7 @@ async function runAuthAction(action) {
     const api = await getOnlineApi();
     const nextAccount = await action(api, usernameInput.value, passwordInput.value);
     setAccount(nextAccount);
+    await loadHistoryAndUpdate();
     passwordInput.value = "";
     authDialog.close();
     setupHint.textContent = "登录成功，可以创建或加入在线房间。";
@@ -336,6 +370,8 @@ logoutButton.addEventListener("click", async () => {
     await api.signOutAccount();
     setAccount(null);
     authDialog.close();
+    if (historyDialog.open) historyDialog.close();
+    if (replayDialog.open) replayDialog.close();
     if (state.mode === "online") returnToMainMenu();
   } catch (error) {
     authError.textContent = error.message || "退出失败，请重试";
@@ -348,10 +384,220 @@ async function restoreAccount() {
   try {
     const api = await getOnlineApi();
     setAccount(await api.getCurrentAccount());
+    if (account) await loadHistoryAndUpdate();
   } catch (error) {
     console.warn("Supabase account restore failed", error);
   }
 }
+
+function myColorForRecord(record) {
+  if (record.game_type !== "online") return record.owner_color;
+  return record.black_user_id === account?.id ? BLACK : WHITE;
+}
+
+function opponentForRecord(record) {
+  const myColor = myColorForRecord(record);
+  return {
+    name: myColor === BLACK ? record.white_name : record.black_name,
+    id: record.game_type === "online"
+      ? (myColor === BLACK ? record.white_user_id : record.black_user_id)
+      : record.game_type,
+  };
+}
+
+function outcomeForRecord(record) {
+  if (record.winner_color === null) return "平局";
+  return record.winner_color === myColorForRecord(record) ? "胜利" : "失败";
+}
+
+function recordsForCurrentOpponent() {
+  if (state.mode === "pve") return gameHistory.filter((record) => record.game_type === "ai");
+  if (state.mode === "pvp") return gameHistory.filter((record) => record.game_type === "local");
+  if (state.mode === "online" && state.opponentId) {
+    return gameHistory.filter((record) => record.game_type === "online"
+      && (record.black_user_id === state.opponentId || record.white_user_id === state.opponentId));
+  }
+  return [];
+}
+
+function updateHistoricalRecord() {
+  const records = recordsForCurrentOpponent();
+  if (!account) {
+    historyRecordText.textContent = "登录后记录战绩";
+    return;
+  }
+  if (!records.length) {
+    historyRecordText.textContent = state.mode === "online" && !state.opponentId ? "等待对手加入" : "尚无交手记录";
+    return;
+  }
+  let wins = 0;
+  let losses = 0;
+  let draws = 0;
+  for (const record of records) {
+    const outcome = outcomeForRecord(record);
+    if (outcome === "胜利") wins += 1;
+    else if (outcome === "失败") losses += 1;
+    else draws += 1;
+  }
+  const opponentName = opponentForRecord(records[0]).name;
+  historyRecordText.textContent = `${account.username} ${wins}胜 : ${opponentName} ${losses}胜${draws ? ` · ${draws}平` : ""}`;
+}
+
+async function loadHistoryAndUpdate() {
+  if (!account) return [];
+  const api = await getOnlineApi();
+  gameHistory = await api.loadGameHistory();
+  updateHistoricalRecord();
+  return gameHistory;
+}
+
+async function saveCompletedGame(completedGame) {
+  if (!completedGame || !account || savedHistoryIds.has(completedGame.clientGameId)) return;
+  if (pendingHistorySaves.has(completedGame.clientGameId)) {
+    return pendingHistorySaves.get(completedGame.clientGameId);
+  }
+  const savePromise = (async () => {
+    const api = await getOnlineApi();
+    await api.saveLocalGame(completedGame);
+    savedHistoryIds.add(completedGame.clientGameId);
+    await loadHistoryAndUpdate();
+  })();
+  pendingHistorySaves.set(completedGame.clientGameId, savePromise);
+  try {
+    await savePromise;
+  } catch (error) {
+    console.error("Game history save failed", error);
+    showDialog("保存失败", "棋局未能保存", error.message || "请检查网络后重试。");
+  } finally {
+    pendingHistorySaves.delete(completedGame.clientGameId);
+  }
+}
+
+async function retractCompletedGame(clientGameId) {
+  if (!clientGameId || !account) return;
+  try {
+    if (pendingHistorySaves.has(clientGameId)) {
+      await pendingHistorySaves.get(clientGameId).catch(() => {});
+    }
+    const api = await getOnlineApi();
+    await api.deleteLocalGame(clientGameId);
+    savedHistoryIds.delete(clientGameId);
+    await loadHistoryAndUpdate();
+  } catch (error) {
+    console.error("Game history retraction failed", error);
+  }
+}
+
+function historyDescription(record) {
+  if (record.game_type === "online") return "在线双人";
+  if (record.game_type === "local") return "同屏双人";
+  const difficulty = record.difficulty === "easy" ? "简单" : record.difficulty === "hard" ? "困难" : "普通";
+  return `PentaZen AI · ${difficulty}`;
+}
+
+function renderHistoryList() {
+  historyList.replaceChildren();
+  let wins = 0;
+  let losses = 0;
+  let draws = 0;
+  for (const record of gameHistory) {
+    const outcome = outcomeForRecord(record);
+    if (outcome === "胜利") wins += 1;
+    else if (outcome === "失败") losses += 1;
+    else draws += 1;
+
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "history-item";
+    const main = document.createElement("span");
+    main.className = "history-item-main";
+    const players = document.createElement("strong");
+    players.textContent = `${record.black_name}（黑） vs ${record.white_name}（白）`;
+    const type = document.createElement("span");
+    type.textContent = `${historyDescription(record)} · 点击复盘`;
+    main.append(players, type);
+    const result = document.createElement("span");
+    result.className = outcome === "胜利" ? "history-result-win" : outcome === "失败" ? "history-result-loss" : "";
+    const time = document.createElement("time");
+    time.dateTime = record.created_at;
+    time.textContent = new Intl.DateTimeFormat("zh-CN", {
+      month: "numeric",
+      day: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    }).format(new Date(record.created_at));
+    result.append(`${outcome} · `, time);
+    button.append(main, result);
+    button.addEventListener("click", () => openReplay(record));
+    historyList.append(button);
+  }
+  historySummary.textContent = `总计 ${gameHistory.length} 局：${wins} 胜、${losses} 负、${draws} 平`;
+  if (!gameHistory.length) {
+    const empty = document.createElement("p");
+    empty.className = "history-empty";
+    empty.textContent = "还没有已完成的棋局。";
+    historyList.append(empty);
+  }
+}
+
+async function openHistoryDialog() {
+  authDialog.close();
+  historySummary.textContent = "正在读取…";
+  historyList.replaceChildren();
+  if (!historyDialog.open) historyDialog.showModal();
+  try {
+    await loadHistoryAndUpdate();
+    renderHistoryList();
+  } catch (error) {
+    historySummary.textContent = error.message || "历史棋局读取失败";
+  }
+}
+
+function drawReplay() {
+  replayCtx.clearRect(0, 0, replayCanvas.width, replayCanvas.height);
+  if (boardImage.complete && boardImage.naturalWidth > 0) {
+    replayCtx.drawImage(boardImage, 0, 0, replayCanvas.width, replayCanvas.height);
+  }
+  for (const move of replayMoves.slice(0, replayStep)) {
+    const image = move.player === BLACK ? blackImage : whiteImage;
+    const canvasX = BOARD_ORIGIN_X + move.x * CELL_SIZE;
+    const canvasY = BOARD_ORIGIN_Y + move.y * CELL_SIZE;
+    replayCtx.drawImage(
+      image,
+      canvasX - STONE_SIZE / 2,
+      canvasY - STONE_SIZE / 2,
+      STONE_SIZE,
+      STONE_SIZE,
+    );
+  }
+  replayStepText.textContent = `${replayStep} / ${replayMoves.length}`;
+  replayStartButton.disabled = replayStep === 0;
+  replayPreviousButton.disabled = replayStep === 0;
+  replayNextButton.disabled = replayStep === replayMoves.length;
+  replayEndButton.disabled = replayStep === replayMoves.length;
+}
+
+async function openReplay(record) {
+  try {
+    const api = await getOnlineApi();
+    replayMoves = await api.loadReplayMoves(record.id);
+    replayStep = 0;
+    replayPlayers.textContent = `${record.black_name}（黑棋） vs ${record.white_name}（白棋） · ${outcomeForRecord(record)}`;
+    historyDialog.close();
+    if (!replayDialog.open) replayDialog.showModal();
+    drawReplay();
+  } catch (error) {
+    historySummary.textContent = error.message || "复盘加载失败";
+  }
+}
+
+historyButton.addEventListener("click", openHistoryDialog);
+historyCloseButton.addEventListener("click", () => historyDialog.close());
+replayCloseButton.addEventListener("click", () => replayDialog.close());
+replayStartButton.addEventListener("click", () => { replayStep = 0; drawReplay(); });
+replayPreviousButton.addEventListener("click", () => { replayStep = Math.max(0, replayStep - 1); drawReplay(); });
+replayNextButton.addEventListener("click", () => { replayStep = Math.min(replayMoves.length, replayStep + 1); drawReplay(); });
+replayEndButton.addEventListener("click", () => { replayStep = replayMoves.length; drawReplay(); });
 
 function onlineReason(room, profilesById) {
   if (room.status === "waiting") return "房间已创建，正在等待对手。";
@@ -391,7 +637,11 @@ async function refreshOnlineRoom() {
       reason: onlineReason(room, profilesById),
       playerName: account.username,
       opponentName: opponentId ? profilesById.get(opponentId) : "等待对手",
-      scores: { player: 0, ai: 0 },
+      opponentId,
+      scores: {
+        player: room.status === "finished" && room.winner_id === account.id ? 1 : 0,
+        ai: room.status === "finished" && room.winner_id === opponentId ? 1 : 0,
+      },
     });
   } catch (error) {
     updateStatus(error.message || "房间同步失败，请刷新页面重试。");
@@ -431,7 +681,7 @@ async function startOnlineRoom() {
   await enterOnlineRoom(await api.joinOnlineRoom(code));
 }
 
-restoreAccount();
+const accountReady = restoreAccount();
 
 async function request(endpoint, body) {
   return localRequest(endpoint, { gameId, ...body });
@@ -634,8 +884,8 @@ function selectMode(mode) {
   pvpSection.hidden = isPve;
   startGameButton.disabled = false;
   setupHint.textContent = isPve
-    ? "请选择 AI 难度后开始游戏"
-    : selectedPvpType === "local" ? "同屏双人：玩家 1 执黑棋先行" : "选择创建或加入在线房间";
+    ? "请选择 AI 难度；开始对局前需要登录"
+    : selectedPvpType === "local" ? "同屏双人：登录后由玩家 1 执黑棋先行" : "选择创建或加入在线房间";
 }
 
 function selectPvpType(type) {
@@ -647,10 +897,10 @@ function selectPvpType(type) {
   }
   joinRoomFields.hidden = type !== "join";
   onlineHint.textContent = type === "local"
-    ? "同屏双人不需要登录"
+    ? account ? `棋局将保存到：${account.username}` : "同屏双人也需要登录，以便保存棋局"
     : account ? `当前账号：${account.username}` : "在线对战需要先登录";
   setupHint.textContent = type === "local"
-    ? "同屏双人：玩家 1 执黑棋先行"
+    ? "同屏双人：登录后由玩家 1 执黑棋先行"
     : type === "create" ? "开始后会生成 6 位房间号" : "输入朋友发来的房间号后开始";
 }
 
@@ -681,6 +931,13 @@ selectDifficulty(selectedDifficulty);
 
 startGameButton.addEventListener("click", async () => {
   if (!selectedMode || localBusy) {
+    return;
+  }
+
+  await accountReady;
+  if (!account) {
+    setupHint.textContent = "请先登录，棋局才能开始并保存。";
+    openAuthDialog();
     return;
   }
 

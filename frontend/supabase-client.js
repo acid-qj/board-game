@@ -144,6 +144,51 @@ export async function surrenderOnlineRoom(code) {
   return unwrapRoom(data);
 }
 
+export async function saveLocalGame(record) {
+  const client = await getClient();
+  const { data, error } = await client.rpc("save_local_game", {
+    p_client_game_id: record.clientGameId,
+    p_game_type: record.gameType,
+    p_difficulty: record.difficulty || null,
+    p_player_color: record.playerColor,
+    p_winner_color: record.winnerColor ?? null,
+    p_finish_reason: record.finishReason,
+    p_moves: record.moves,
+  });
+  throwIfError(error);
+  return data;
+}
+
+export async function deleteLocalGame(clientGameId) {
+  const client = await getClient();
+  const { error } = await client.rpc("delete_local_game", {
+    p_client_game_id: clientGameId,
+  });
+  throwIfError(error);
+}
+
+export async function loadGameHistory(limit = 1000) {
+  const client = await getClient();
+  const { data, error } = await client
+    .from("game_records")
+    .select("id, client_game_id, room_id, game_type, owner_id, owner_color, black_user_id, white_user_id, black_name, white_name, difficulty, winner_color, finish_reason, created_at")
+    .order("created_at", { ascending: false })
+    .limit(limit);
+  throwIfError(error);
+  return data;
+}
+
+export async function loadReplayMoves(gameId) {
+  const client = await getClient();
+  const { data, error } = await client
+    .from("game_record_moves")
+    .select("move_no, x, y, player")
+    .eq("game_id", gameId)
+    .order("move_no");
+  throwIfError(error);
+  return data;
+}
+
 export async function loadOnlineRoom(roomId) {
   const client = await getClient();
   const [{ data: room, error: roomError }, { data: moves, error: movesError }] = await Promise.all([
