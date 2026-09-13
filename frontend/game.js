@@ -1,6 +1,6 @@
 import createGomokuModule from "../wasm/gomoku.js";
 import { localRequest } from "./local-game.js?v=5";
-import { createCheckersController } from "./checkers-game.js?v=7";
+import { createCheckersController } from "./checkers-game.js?v=8";
 
 const BOARD_SIZE = 15;
 const BOARD_ORIGIN_X = 19;
@@ -882,7 +882,7 @@ function openGameSetup(game) {
   pvpSection.hidden = true;
   startGameButton.disabled = true;
   setupHint.textContent = game === "checkers"
-    ? "请选择双人模式；单人 AI 接入后即可开放"
+    ? "请选择国际跳棋单人或双人模式"
     : "请选择单人或双人模式";
   for (const button of gameEntryButtons) {
     button.disabled = true;
@@ -931,11 +931,12 @@ function selectMode(mode) {
   pvpModeButton.setAttribute("aria-pressed", String(!isPve));
   pveModeButton.setAttribute("aria-pressed", String(isPve));
   if (selectedGame === "checkers") {
-    difficultySection.hidden = true;
+    difficultySection.hidden = !isPve;
     pvpSection.hidden = true;
-    startGameButton.disabled = isPve;
+    startGameButton.disabled = false;
+    if (isPve) selectDifficulty(selectedDifficulty);
     setupHint.textContent = isPve
-      ? "国际跳棋 AI 尚未接入；收到 AI 代码后会开放单人模式"
+      ? "请选择国际跳棋 AI 难度；AI 会在浏览器中思考"
       : "同屏双人：玩家 1 执黑棋先行，使用 10×10 国际规则";
     return;
   }
@@ -972,7 +973,10 @@ function selectDifficulty(difficulty) {
     button.setAttribute("aria-pressed", String(selected));
   }
   const label = difficulty === "easy" ? "简单" : difficulty === "normal" ? "普通" : "困难";
-  const limit = difficulty === "easy" ? 10 : difficulty === "normal" ? 50 : 100;
+  const checkersLimits = { easy: 100, normal: 450, hard: 1400 };
+  const limit = selectedGame === "checkers"
+    ? checkersLimits[difficulty]
+    : (difficulty === "easy" ? 10 : difficulty === "normal" ? 50 : 100);
   difficultyHint.textContent = `${label}：AI 思考 ${limit} 毫秒`;
 }
 
@@ -1007,16 +1011,12 @@ startGameButton.addEventListener("click", async () => {
   setupHint.textContent = "正在准备棋局…";
   try {
     if (selectedGame === "checkers") {
-      if (selectedMode !== "pvp") {
-        setupHint.textContent = "国际跳棋单人 AI 尚未接入，请先选择双人模式。";
-        return;
-      }
       if (pendingNavigationVersion !== navigationVersion) return;
       setupScreen.hidden = true;
       gameSelectScreen.hidden = true;
       gameScreen.hidden = true;
       checkersScreen.hidden = false;
-      checkersController.startRound();
+      checkersController.startRound({ mode: selectedMode, difficulty: selectedDifficulty });
       checkersCanvas.focus();
       return;
     }
@@ -1043,7 +1043,7 @@ startGameButton.addEventListener("click", async () => {
     }
   } finally {
     localBusy = false;
-    startGameButton.disabled = !selectedMode || (selectedGame === "checkers" && selectedMode === "pve");
+    startGameButton.disabled = !selectedMode;
     if (!gameScreen.hidden) {
       updateStatus();
       updateControls();

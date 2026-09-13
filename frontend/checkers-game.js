@@ -37,8 +37,8 @@ function cloneBoard(board) {
 function createInitialBoard() {
   return Array.from({ length: SIZE }, (_, y) => Array.from({ length: SIZE }, (_, x) => {
     if ((x + y) % 2 === 0) return EMPTY;
-    if (y < 4) return BLACK_MAN;
-    if (y > 5) return WHITE_MAN;
+    if (y < 4) return WHITE_MAN;
+    if (y > 5) return BLACK_MAN;
     return EMPTY;
   }));
 }
@@ -137,7 +137,7 @@ function ordinaryMoves(board, color) {
           }
         }
       } else {
-        const dy = color === BLACK ? 1 : -1;
+        const dy = color === BLACK ? -1 : 1;
         for (const dx of [-1, 1]) {
           const targetX = x + dx;
           const targetY = y + dy;
@@ -204,9 +204,14 @@ export function createCheckersController(elements) {
   } = elements;
   const ctx = canvas.getContext("2d");
   const CELL = canvas.width / SIZE;
+  const aiWorker = new Worker(new URL("./checkers-ai-worker.js?v=1", import.meta.url), { type: "module" });
   let board = createInitialBoard();
   let currentColor = BLACK;
   let playerOneColor = BLACK;
+  let mode = "pvp";
+  let difficulty = "normal";
+  let aiThinking = false;
+  let aiRequestId = 0;
   let scores = { playerOne: 0, playerTwo: 0 };
   let selected = null;
   let activeSequences = [];
@@ -219,6 +224,7 @@ export function createCheckersController(elements) {
   let quietPly = 0;
 
   function playerName(color) {
+    if (mode === "pve") return color === playerOneColor ? "玩家" : "AI";
     return color === playerOneColor ? "玩家 1" : "玩家 2";
   }
 
@@ -256,6 +262,11 @@ export function createCheckersController(elements) {
     turnSnapshot = null;
   }
 
+  function cancelAiRequest() {
+    aiRequestId += 1;
+    aiThinking = false;
+  }
+
   function selectableOrigins(plan) {
     const source = plan.captures.length ? plan.captures : plan.moves;
     return new Set(source.map((move) => keyOf(move.fromX, move.fromY)));
@@ -274,6 +285,10 @@ export function createCheckersController(elements) {
   function updateStatus(plan = legalTurn(board, currentColor)) {
     if (gameOver) return;
     const name = playerName(currentColor);
+    if (mode === "pve" && currentColor !== playerOneColor && aiThinking) {
+      status.textContent = `AI · ${colorName(currentColor)}正在思考…`;
+      return;
+    }
     if (pendingCaptured.length) {
       status.textContent = `${name}必须继续吃子（本回合共吃 ${plan.maximum || activeSequences[0]?.steps.length} 枚）。`;
     } else if (plan.captures.length) {
@@ -284,16 +299,22 @@ export function createCheckersController(elements) {
   }
 
   function updateCards() {
-    playerOneLabel.textContent = `玩家 1 · ${colorName(playerOneColor)}`;
-    playerTwoLabel.textContent = `玩家 2 · ${colorName(otherColor(playerOneColor))}`;
+    playerOneLabel.textContent = `${mode === "pve" ? "玩家" : "玩家 1"} · ${colorName(playerOneColor)}`;
+    playerTwoLabel.textContent = `${mode === "pve" ? "AI" : "玩家 2"} · ${colorName(otherColor(playerOneColor))}`;
     playerOnePiece.className = `checkers-token ${playerOneColor === BLACK ? "is-black" : "is-white"}`;
     playerTwoPiece.className = `checkers-token ${playerOneColor === WHITE ? "is-black" : "is-white"}`;
     playerOneScore.textContent = String(scores.playerOne);
     playerTwoScore.textContent = String(scores.playerTwo);
     playerOneCard.classList.toggle("is-current", !gameOver && currentColor === playerOneColor);
     playerTwoCard.classList.toggle("is-current", !gameOver && currentColor !== playerOneColor);
-    undoButton.disabled = !history.length && !turnSnapshot;
-    surrenderButton.disabled = gameOver;
+    const onlyAiOpening = mode === "pve"
+      && currentColor === playerOneColor
+      && playerOneColor === WHITE
+      && history.length < 2
+      && !turnSnapshot;
+    undoButton.disabled = (!history.length && !turnSnapshot) || onlyAiOpening;
+    surrenderButton.disabled = gameOver || aiThinking || (mode === "pve" && currentColor !== playerOneColor);
+    restartButton.disabled = aiThinking;
   }
 
   function drawPiece(x, y, piece, isPendingCapture) {
@@ -386,6 +407,7 @@ export function createCheckersController(elements) {
   }
 
   function finish(winnerColor, message) {
+    cancelAiRequest();
     gameOver = true;
     if (winnerColor === playerOneColor) scores.playerOne += 1;
     else scores.playerTwo += 1;
@@ -396,6 +418,7 @@ export function createCheckersController(elements) {
   }
 
   function finishDraw() {
+    cancelAiRequest();
     gameOver = true;
     status.textContent = "连续 50 回合没有吃子或升王，本局和棋。";
     clearSelection();
@@ -408,8 +431,8 @@ export function createCheckersController(elements) {
     for (const capture of pendingCaptured) board[capture.y][capture.x] = EMPTY;
     const piece = board[selected.y][selected.x];
     if (!isKing(piece)) {
-      if (piece === BLACK_MAN && selected.y === SIZE - 1) board[selected.y][selected.x] = BLACK_KING;
-      if (piece === WHITE_MAN && selected.y === 0) board[selected.y][selected.x] = WHITE_KING;
+      if (piece === BLACK_MAN && selected.y === 0) board[selected.y][selected.x] = BLACK_KING;
+      if (piece === WHITE_MAN && selected.y === SIZE - 1) board[selected.y][selected.x] = WHITE_KING;
     }
     const promoted = wasPromotion || piece !== board[selected.y][selected.x];
     quietPly = wasCapture || promoted ? 0 : quietPly + 1;
@@ -428,7 +451,83 @@ export function createCheckersController(elements) {
     }
     updateStatus(nextPlan);
     render();
+    requestAiMove();
   }
+
+  function sameCaptureRoute(candidate, move) {
+    if (candidate.fromX !== move.fromX || candidate.fromY !== move.fromY) return false;
+    if (candidate.steps.length !== move.steps.length) return false;
+    return candidate.steps.every((step, index) => {
+      const proposed = move.steps[index];
+      return step.x === proposed.x
+        && step.y === proposed.y
+        && step.captureX === proposed.captureX
+        && step.captureY === proposed.captureY;
+    });
+  }
+
+  function applyAiMove(proposedMove) {
+    if (gameOver || mode !== "pve" || currentColor === playerOneColor) return;
+    const plan = legalTurn(board, currentColor);
+    let move;
+    if (plan.captures.length) {
+      move = plan.captures.find((candidate) => sameCaptureRoute(candidate, proposedMove));
+      if (!move) move = plan.captures[0];
+    } else {
+      const target = proposedMove?.steps?.[0];
+      move = plan.moves.find((candidate) => (
+        candidate.fromX === proposedMove?.fromX
+        && candidate.fromY === proposedMove?.fromY
+        && candidate.x === target?.x
+        && candidate.y === target?.y
+      )) || plan.moves[0];
+    }
+    if (!move) {
+      finish(playerOneColor, "AI 无合法走法，玩家获胜并得 1 分。");
+      return;
+    }
+
+    turnSnapshot = snapshot();
+    selected = { x: move.fromX, y: move.fromY };
+    const piece = board[selected.y][selected.x];
+    board[selected.y][selected.x] = EMPTY;
+    const steps = move.steps || [{ x: move.x, y: move.y }];
+    for (const step of steps) {
+      if (Number.isInteger(step.captureX)) pendingCaptured.push({ x: step.captureX, y: step.captureY });
+      selected = { x: step.x, y: step.y };
+    }
+    board[selected.y][selected.x] = piece;
+    completeTurn(pendingCaptured.length > 0, false);
+  }
+
+  function requestAiMove() {
+    if (mode !== "pve" || gameOver || currentColor === playerOneColor || aiThinking) return;
+    const id = ++aiRequestId;
+    aiThinking = true;
+    updateStatus();
+    render();
+    aiWorker.postMessage({
+      id,
+      board: cloneBoard(board),
+      color: currentColor,
+      difficulty,
+    });
+  }
+
+  aiWorker.addEventListener("message", (event) => {
+    if (event.data?.id !== aiRequestId || !aiThinking) return;
+    aiThinking = false;
+    if (event.data.error) console.error("International draughts AI failed", event.data.error);
+    else console.log(`AI depth=${event.data.depth} nodes=${event.data.nodes} time=${event.data.timeMs}ms`);
+    applyAiMove(event.data.move);
+  });
+
+  aiWorker.addEventListener("error", (event) => {
+    if (!aiThinking) return;
+    console.error("International draughts AI worker failed", event.message || event);
+    aiThinking = false;
+    applyAiMove(null);
+  });
 
   function selectPiece(x, y, plan) {
     if (colorOf(board[y][x]) !== currentColor) return;
@@ -487,7 +586,7 @@ export function createCheckersController(elements) {
   }
 
   function handleBoardClick(event) {
-    if (gameOver) return;
+    if (gameOver || aiThinking || (mode === "pve" && currentColor !== playerOneColor)) return;
     const rect = canvas.getBoundingClientRect();
     const x = Math.floor((event.clientX - rect.left) * canvas.width / rect.width / CELL);
     const y = Math.floor((event.clientY - rect.top) * canvas.height / rect.height / CELL);
@@ -506,7 +605,10 @@ export function createCheckersController(elements) {
     selectPiece(x, y, plan);
   }
 
-  function startRound({ swapColors = false } = {}) {
+  function startRound({ swapColors = false, mode: nextMode = mode, difficulty: nextDifficulty = difficulty } = {}) {
+    cancelAiRequest();
+    mode = nextMode;
+    difficulty = nextDifficulty;
     if (started && swapColors) playerOneColor = otherColor(playerOneColor);
     started = true;
     board = createInitialBoard();
@@ -521,16 +623,19 @@ export function createCheckersController(elements) {
     quietPly = 0;
     updateStatus();
     render();
+    requestAiMove();
   }
 
   canvas.addEventListener("click", handleBoardClick);
   restartButton.addEventListener("click", () => startRound({ swapColors: true }));
   undoButton.addEventListener("click", () => {
+    cancelAiRequest();
     if (turnSnapshot) {
       restore(turnSnapshot);
       return;
     }
-    const previous = history.pop();
+    let previous = history.pop();
+    if (mode === "pve" && currentColor === playerOneColor && history.length) previous = history.pop();
     if (previous) restore(previous);
   });
   surrenderButton.addEventListener("click", () => {
